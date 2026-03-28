@@ -4,16 +4,27 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"math/rand"
 	"net/http"
+	"time"
 )
 
 type BidRequest struct {
-	UserID      string  `json:"user_id"`
-	PlacementID string  `json:"placement_id"`
-	FloorPrice  float64 `json:"floor_price"`
+	RequestID   string `json:"request_id"`   // идемпотентность
+	ImpID       string `json:"imp_id"`       // конкретный показ
+	SiteID      string `json:"site_id"`      // площадка
+	PlacementID string `json:"placement_id"` // слот
+
+	FloorPrice float64 `json:"floor_price"`
+
+	UserID     string `json:"user_id"`
+	DeviceType string `json:"device_type"`
+
+	Timestamp int64 `json:"ts"`
 }
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 	reqBody := BidRequest{
 		UserID:      "123",
 		PlacementID: "banner_top",
