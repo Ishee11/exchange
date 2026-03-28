@@ -15,11 +15,6 @@ RPS-based generator для отправки bid-запросов.
 Ограничения:
 - ticker не даёт точный RPS под нагрузкой
 - нет ограничения на количество goroutine
-
-Прод-улучшения:
-- worker pool
-- rate limiter
-- метрики
 */
 
 package generator

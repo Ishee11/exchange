@@ -1,12 +1,13 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"log"
+	"context"
 	"math/rand"
-	"net/http"
+	"os"
 	"time"
+
+	"github.com/Ishee11/exchange/internal/client"
+	"github.com/Ishee11/exchange/internal/generator"
 )
 
 type BidRequest struct {
@@ -25,22 +26,19 @@ type BidRequest struct {
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
-	reqBody := BidRequest{
-		UserID:      "123",
-		PlacementID: "banner_top",
-		FloorPrice:  1.0,
+
+	url := os.Getenv("DSP_URL")
+	if url == "" {
+		url = "http://localhost:8080/bid"
 	}
 
-	data, _ := json.Marshal(reqBody)
+	c := client.New(url)
 
-	resp, err := http.Post("http://localhost:8080/bid", "application/json", bytes.NewBuffer(data))
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
+	gen := generator.New(
+		10,
+		100*time.Millisecond, // ← SLA
+		c,
+	)
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-
-	log.Printf("response: %+v\n", result)
+	gen.Start(context.Background())
 }

@@ -51,7 +51,13 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) {
 	latency := time.Since(start)
 
 	if err != nil {
-		log.Printf("request failed: err=%v latency=%v\n", err, latency)
+		if ctx.Err() == context.DeadlineExceeded {
+			// timeout → DSP не уложился в SLA
+			log.Printf("timeout: latency=%v\n", latency)
+		} else {
+			// request error → сеть / соединение / DNS и т.д.
+			log.Printf("request error: %v latency=%v\n", err, latency)
+		}
 		return
 	}
 	defer resp.Body.Close()
