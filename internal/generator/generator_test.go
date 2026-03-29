@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Ishee11/exchange/internal/client"
 	"github.com/Ishee11/exchange/internal/model"
 )
 
@@ -14,10 +15,11 @@ type mockSender struct {
 	calls int
 }
 
-func (m *mockSender) Send(ctx context.Context, req model.BidRequest) {
+func (m *mockSender) Send(ctx context.Context, req model.BidRequest) client.SendResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls++
+	return client.SendResult{}
 }
 
 func (m *mockSender) Count() int {

@@ -26,11 +26,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Ishee11/exchange/internal/client"
 	"github.com/Ishee11/exchange/internal/model"
 )
 
 type Sender interface {
-	Send(ctx context.Context, req model.BidRequest)
+	Send(ctx context.Context, req model.BidRequest) client.SendResult
 }
 
 type Generator struct {

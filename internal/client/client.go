@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -16,6 +17,24 @@ type Client struct {
 	client *http.Client
 }
 
+type SendStatus string
+
+const (
+	StatusSuccess      SendStatus = "success"
+	StatusTimeout      SendStatus = "timeout"
+	StatusRequestError SendStatus = "request_error"
+	StatusBadResponse  SendStatus = "bad_response"
+	StatusMarshalError SendStatus = "marshal_error"
+	StatusBuildError   SendStatus = "build_error"
+)
+
+type SendResult struct {
+	Status     SendStatus
+	HTTPStatus int
+	Latency    time.Duration
+	Err        error
+}
+
 func New(url string) *Client {
 	return &Client{
 		url: url,
@@ -25,11 +44,14 @@ func New(url string) *Client {
 	}
 }
 
-func (c *Client) Send(ctx context.Context, req model.BidRequest) {
+func (c *Client) Send(ctx context.Context, req model.BidRequest) SendResult {
 	data, err := json.Marshal(req)
 	if err != nil {
 		log.Println("marshal error:", err)
-		return
+		return SendResult{
+			Status: StatusMarshalError,
+			Err:    err,
+		}
 	}
 
 	httpReq, err := http.NewRequestWithContext(
@@ -40,7 +62,10 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) {
 	)
 	if err != nil {
 		log.Println("request build error:", err)
-		return
+		return SendResult{
+			Status: StatusBuildError,
+			Err:    err,
+		}
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -51,16 +76,37 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) {
 	latency := time.Since(start)
 
 	if err != nil {
-		if ctx.Err() == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			// timeout → DSP не уложился в SLA
 			log.Printf("timeout: latency=%v\n", latency)
-		} else {
-			// request error → сеть / соединение / DNS и т.д.
-			log.Printf("request error: %v latency=%v\n", err, latency)
+			return SendResult{
+				Status:  StatusTimeout,
+				Latency: latency,
+				Err:     err,
+			}
 		}
-		return
+
+		log.Printf("request error: %v latency=%v\n", err, latency)
+		return SendResult{
+			Status:  StatusRequestError,
+			Latency: latency,
+			Err:     err,
+		}
 	}
 	defer resp.Body.Close()
 
-	log.Printf("response: status=%d latency=%v\n", resp.StatusCode, latency)
+	result := SendResult{
+		HTTPStatus: resp.StatusCode,
+		Latency:    latency,
+	}
+
+	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
+		result.Status = StatusSuccess
+		log.Printf("response: status=%s http_status=%d latency=%v\n", result.Status, result.HTTPStatus, result.Latency)
+		return result
+	}
+
+	result.Status = StatusBadResponse
+	log.Printf("response: status=%s http_status=%d latency=%v\n", result.Status, result.HTTPStatus, result.Latency)
+	return result
 }
