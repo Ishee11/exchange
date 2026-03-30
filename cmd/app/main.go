@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"log"
 	"math/rand"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/Ishee11/exchange/internal/client"
 	"github.com/Ishee11/exchange/internal/generator"
+	"github.com/Ishee11/exchange/internal/metrics"
 )
 
 type BidRequest struct {
@@ -32,6 +35,13 @@ func main() {
 		url = "http://localhost:8080/bid"
 	}
 
+	metricsAddr := os.Getenv("METRICS_ADDR")
+	if metricsAddr == "" {
+		metricsAddr = ":2112"
+	}
+
+	go serveMetrics(metricsAddr)
+
 	c := client.New(url)
 
 	gen := generator.New(
@@ -41,4 +51,15 @@ func main() {
 	)
 
 	gen.Start(context.Background())
+}
+
+func serveMetrics(addr string) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", metrics.Handler())
+
+	log.Printf("metrics server started: addr=%s path=/metrics\n", addr)
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Fatalf("metrics server failed: %v", err)
+	}
 }

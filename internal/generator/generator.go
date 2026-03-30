@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Ishee11/exchange/internal/client"
+	"github.com/Ishee11/exchange/internal/metrics"
 	"github.com/Ishee11/exchange/internal/model"
 )
 
@@ -76,6 +77,7 @@ func (g *Generator) fire(parentCtx context.Context) {
 	defer cancel()
 
 	req := buildRequest()
+	metrics.IncGeneratedRequest()
 	g.sender.Send(ctx, req)
 }
 

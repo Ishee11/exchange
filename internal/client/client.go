@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Ishee11/exchange/internal/metrics"
 	"github.com/Ishee11/exchange/internal/model"
 )
 
@@ -47,11 +48,13 @@ func New(url string) *Client {
 func (c *Client) Send(ctx context.Context, req model.BidRequest) SendResult {
 	data, err := json.Marshal(req)
 	if err != nil {
-		log.Println("marshal error:", err)
-		return SendResult{
+		result := SendResult{
 			Status: StatusMarshalError,
 			Err:    err,
 		}
+		log.Println("marshal error:", err)
+		metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
+		return result
 	}
 
 	httpReq, err := http.NewRequestWithContext(
@@ -61,16 +64,20 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) SendResult {
 		bytes.NewBuffer(data),
 	)
 	if err != nil {
-		log.Println("request build error:", err)
-		return SendResult{
+		result := SendResult{
 			Status: StatusBuildError,
 			Err:    err,
 		}
+		log.Println("request build error:", err)
+		metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
+		return result
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	start := time.Now()
+	metrics.IncInFlight()
+	defer metrics.DecInFlight()
 
 	resp, err := c.client.Do(httpReq)
 	latency := time.Since(start)
@@ -78,20 +85,23 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) SendResult {
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			// timeout → DSP не уложился в SLA
-			log.Printf("timeout: latency=%v\n", latency)
-			return SendResult{
+			result := SendResult{
 				Status:  StatusTimeout,
 				Latency: latency,
 				Err:     err,
 			}
+			metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
+			return result
 		}
 
-		log.Printf("request error: %v latency=%v\n", err, latency)
-		return SendResult{
+		result := SendResult{
 			Status:  StatusRequestError,
 			Latency: latency,
 			Err:     err,
 		}
+		log.Printf("request error: %v latency=%v\n", err, latency)
+		metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
+		return result
 	}
 	defer resp.Body.Close()
 
@@ -102,11 +112,11 @@ func (c *Client) Send(ctx context.Context, req model.BidRequest) SendResult {
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
 		result.Status = StatusSuccess
-		log.Printf("response: status=%s http_status=%d latency=%v\n", result.Status, result.HTTPStatus, result.Latency)
+		metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
 		return result
 	}
 
 	result.Status = StatusBadResponse
-	log.Printf("response: status=%s http_status=%d latency=%v\n", result.Status, result.HTTPStatus, result.Latency)
+	metrics.ObserveClientRequest(string(result.Status), result.HTTPStatus, result.Latency)
 	return result
 }
