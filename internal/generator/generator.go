@@ -18,6 +18,7 @@ package generator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -55,29 +56,69 @@ type Config struct {
 	RequestMix       RequestMix
 }
 
+type ScenarioStep struct {
+	Name     string
+	Duration time.Duration
+	Config   Config
+}
+
 type Sender interface {
 	Send(ctx context.Context, req model.BidRequest) client.SendResult
 }
 
 type Generator struct {
 	cfg    Config
+	steps  []ScenarioStep
 	sender Sender
 	sem    chan struct{}
 }
 
 func New(cfg Config, sender Sender) *Generator {
+	return NewWithScenario(cfg, nil, sender)
+}
+
+func NewWithScenario(cfg Config, steps []ScenarioStep, sender Sender) *Generator {
 	if err := validateConfig(cfg); err != nil {
 		log.Fatal(err)
 	}
 
+	maxConcurrency := cfg.ConcurrencyLimit
+	for _, step := range steps {
+		if step.Name == "" {
+			log.Fatal("scenario step name must not be empty")
+		}
+
+		if step.Duration <= 0 {
+			log.Fatal("scenario step duration must be > 0")
+		}
+
+		if err := validateConfig(step.Config); err != nil {
+			log.Fatalf("invalid scenario step %q: %v", step.Name, err)
+		}
+
+		if step.Config.ConcurrencyLimit > maxConcurrency {
+			maxConcurrency = step.Config.ConcurrencyLimit
+		}
+	}
+
 	return &Generator{
 		cfg:    cfg,
+		steps:  steps,
 		sender: sender,
-		sem:    make(chan struct{}, cfg.ConcurrencyLimit),
+		sem:    make(chan struct{}, maxConcurrency),
 	}
 }
 
 func (g *Generator) Start(ctx context.Context) {
+	if len(g.steps) > 0 {
+		log.Printf("generator started in scenario mode: steps=%d\n", len(g.steps))
+		if err := g.runScenario(ctx); err != nil && err != context.Canceled {
+			log.Printf("generator stopped with error: %v\n", err)
+		}
+		log.Println("generator stopped")
+		return
+	}
+
 	logConfig("generator started", g.cfg)
 
 	if err := g.runProfile(ctx, g.cfg); err != nil && err != context.Canceled {
@@ -85,6 +126,27 @@ func (g *Generator) Start(ctx context.Context) {
 	}
 
 	log.Println("generator stopped")
+}
+
+func (g *Generator) runScenario(ctx context.Context) error {
+	for _, step := range g.steps {
+		stepCtx, cancel := context.WithTimeout(ctx, step.Duration)
+		log.Printf("generator scenario step started: name=%s duration=%v\n", step.Name, step.Duration)
+		logConfig("generator profile", step.Config)
+
+		err := g.runProfile(stepCtx, step.Config)
+		cancel()
+
+		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 func (g *Generator) runProfile(ctx context.Context, cfg Config) error {

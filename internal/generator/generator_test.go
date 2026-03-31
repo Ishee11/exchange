@@ -188,3 +188,55 @@ func TestBuildRequest_ByClass(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerator_RunsScenarioStepsSequentially(t *testing.T) {
+	sender := &timestampSender{}
+
+	steps := []ScenarioStep{
+		{
+			Name:     "normal",
+			Duration: 80 * time.Millisecond,
+			Config: Config{
+				TargetRPS:        20,
+				Timeout:          50 * time.Millisecond,
+				ConcurrencyLimit: 2,
+			},
+		},
+		{
+			Name:     "heavy",
+			Duration: 80 * time.Millisecond,
+			Config: Config{
+				TargetRPS:        200,
+				Timeout:          50 * time.Millisecond,
+				ConcurrencyLimit: 2,
+			},
+		},
+	}
+
+	gen := NewWithScenario(
+		Config{
+			TargetRPS:        10,
+			Timeout:          50 * time.Millisecond,
+			ConcurrencyLimit: 2,
+		},
+		steps,
+		sender,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	gen.Start(ctx)
+
+	firstStepCount := sender.CountBetween(start, 0, 80*time.Millisecond)
+	secondStepCount := sender.CountBetween(start, 80*time.Millisecond, 160*time.Millisecond)
+
+	if firstStepCount == 0 {
+		t.Fatalf("expected requests during first scenario step, got %d", firstStepCount)
+	}
+
+	if secondStepCount <= firstStepCount {
+		t.Fatalf("expected second step to send more requests after profile switch: first=%d second=%d", firstStepCount, secondStepCount)
+	}
+}

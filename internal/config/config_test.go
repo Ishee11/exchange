@@ -63,3 +63,24 @@ func TestLoad_OverridesProfileDefaults(t *testing.T) {
 		t.Fatalf("mix overrides not applied: %+v", cfg)
 	}
 }
+
+func TestLoad_ParsesScenario(t *testing.T) {
+	t.Setenv("LOAD_SCENARIO", "normal:2m, burst:45s,heavy:90s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+
+	if len(cfg.LoadScenario) != 3 {
+		t.Fatalf("unexpected scenario length: got %d want %d", len(cfg.LoadScenario), 3)
+	}
+
+	if cfg.LoadScenario[0].Profile != ProfileNormal || cfg.LoadScenario[0].Duration != 2*time.Minute {
+		t.Fatalf("unexpected first step: %+v", cfg.LoadScenario[0])
+	}
+
+	if cfg.LoadScenario[2].Profile != ProfileHeavy || cfg.LoadScenario[2].Duration != 90*time.Second {
+		t.Fatalf("unexpected last step: %+v", cfg.LoadScenario[2])
+	}
+}

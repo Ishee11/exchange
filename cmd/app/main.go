@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -25,10 +26,13 @@ func main() {
 
 	c := client.New(cfg.DSPURL)
 
-	gen := generator.New(
-		toGeneratorConfig(cfg),
-		c,
-	)
+	genCfg := toGeneratorConfig(cfg)
+	scenario, err := toGeneratorScenario(cfg.LoadScenario)
+	if err != nil {
+		log.Fatalf("scenario config error: %v", err)
+	}
+
+	gen := generator.NewWithScenario(genCfg, scenario, c)
 
 	gen.Start(context.Background())
 }
@@ -59,4 +63,27 @@ func toGeneratorConfig(cfg config.Config) generator.Config {
 			NoBidProneShare: cfg.NoBidProneShare,
 		},
 	}
+}
+
+func toGeneratorScenario(steps []config.ScenarioStep) ([]generator.ScenarioStep, error) {
+	if len(steps) == 0 {
+		return nil, nil
+	}
+
+	result := make([]generator.ScenarioStep, 0, len(steps))
+
+	for _, step := range steps {
+		profileCfg, ok := config.ProfileDefaults(step.Profile)
+		if !ok {
+			return nil, fmt.Errorf("unknown scenario profile %q", step.Profile)
+		}
+
+		result = append(result, generator.ScenarioStep{
+			Name:     step.Profile,
+			Duration: step.Duration,
+			Config:   toGeneratorConfig(profileCfg),
+		})
+	}
+
+	return result, nil
 }

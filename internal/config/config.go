@@ -18,6 +18,7 @@ type Config struct {
 	DSPURL           string
 	MetricsAddr      string
 	TrafficProfile   string
+	LoadScenario     []ScenarioStep
 	TargetRPS        int
 	RequestTimeout   time.Duration
 	ConcurrencyLimit int
@@ -30,10 +31,15 @@ type Config struct {
 	NoBidProneShare  float64
 }
 
+type ScenarioStep struct {
+	Profile  string
+	Duration time.Duration
+}
+
 func Load() (Config, error) {
 	profile := strings.ToLower(getEnv("TRAFFIC_PROFILE", ProfileNormal))
 
-	cfg, ok := profileDefaults(profile)
+	cfg, ok := ProfileDefaults(profile)
 	if !ok {
 		return Config{}, fmt.Errorf("unknown traffic profile %q", profile)
 	}
@@ -43,6 +49,10 @@ func Load() (Config, error) {
 	cfg.TrafficProfile = profile
 	cfg.DSPURL = getEnv("DSP_URL", "http://localhost:8080/bid")
 	cfg.MetricsAddr = getEnv("METRICS_ADDR", ":2112")
+	cfg.LoadScenario, err = parseScenario(getEnv("LOAD_SCENARIO", ""))
+	if err != nil {
+		return Config{}, err
+	}
 
 	if cfg.TargetRPS, err = getEnvInt("TARGET_RPS", cfg.TargetRPS); err != nil {
 		return Config{}, err
@@ -120,7 +130,7 @@ func (c Config) Validate() error {
 	return nil
 }
 
-func profileDefaults(profile string) (Config, bool) {
+func ProfileDefaults(profile string) (Config, bool) {
 	switch profile {
 	case ProfileNormal:
 		return Config{
@@ -164,6 +174,52 @@ func profileDefaults(profile string) (Config, bool) {
 	default:
 		return Config{}, false
 	}
+}
+
+func parseScenario(raw string) ([]ScenarioStep, error) {
+	if raw == "" {
+		return nil, nil
+	}
+
+	parts := strings.Split(raw, ",")
+	steps := make([]ScenarioStep, 0, len(parts))
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		pieces := strings.Split(part, ":")
+		if len(pieces) != 2 {
+			return nil, fmt.Errorf("LOAD_SCENARIO step %q must have format profile:duration", part)
+		}
+
+		profile := strings.ToLower(strings.TrimSpace(pieces[0]))
+		if _, ok := ProfileDefaults(profile); !ok {
+			return nil, fmt.Errorf("LOAD_SCENARIO step %q uses unknown profile %q", part, profile)
+		}
+
+		duration, err := time.ParseDuration(strings.TrimSpace(pieces[1]))
+		if err != nil {
+			return nil, fmt.Errorf("LOAD_SCENARIO step %q has invalid duration: %w", part, err)
+		}
+
+		if duration <= 0 {
+			return nil, fmt.Errorf("LOAD_SCENARIO step %q must have duration > 0", part)
+		}
+
+		steps = append(steps, ScenarioStep{
+			Profile:  profile,
+			Duration: duration,
+		})
+	}
+
+	if len(steps) == 0 {
+		return nil, nil
+	}
+
+	return steps, nil
 }
 
 func getEnv(key, fallback string) string {

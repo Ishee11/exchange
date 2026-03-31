@@ -32,6 +32,7 @@ generator → client → DSP
 - `DSP_URL` — URL DSP, по умолчанию `http://localhost:8080/bid`
 - `METRICS_ADDR` — адрес HTTP endpoint с метриками, по умолчанию `:2112`
 - `TRAFFIC_PROFILE` — `normal`, `burst`, `heavy`
+- `LOAD_SCENARIO` — последовательность шагов `profile:duration`, например `normal:2m,burst:1m,heavy:3m`
 - `TARGET_RPS` — целевой RPS профиля
 - `CONCURRENCY_LIMIT` — максимум одновременных in-flight запросов
 - `REQUEST_TIMEOUT` — дедлайн на один запрос
@@ -42,6 +43,8 @@ generator → client → DSP
 - `INVALID_SHARE` — доля частично сломанных запросов
 - `EXPENSIVE_SHARE` — доля expensive запросов
 - `NO_BID_PRONE_SHARE` — доля no-bid-prone запросов
+
+Если задан `LOAD_SCENARIO`, generator автоматически переключает профили по времени в одном запуске. Для сценарных шагов используются дефолты соответствующих профилей.
 
 ## Запуск
 
@@ -57,6 +60,13 @@ TARGET_RPS=1500 \
 CONCURRENCY_LIMIT=300 \
 REQUEST_TIMEOUT=80ms \
 PLATEAU_DURATION=20s \
+go run ./cmd/app
+```
+
+Пример запуска 10-минутного сценария:
+
+```bash
+LOAD_SCENARIO=normal:2m,burst:1m,normal:2m,heavy:3m,burst:1m,normal:1m \
 go run ./cmd/app
 ```
 
