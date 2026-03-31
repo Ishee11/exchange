@@ -53,6 +53,9 @@ type Config struct {
 	RampUpDuration   time.Duration
 	PlateauDuration  time.Duration
 	RampDownDuration time.Duration
+	SpikeMultiplier  float64
+	SpikeDuration    time.Duration
+	SpikeInterval    time.Duration
 	RequestMix       RequestMix
 }
 
@@ -150,6 +153,7 @@ func (g *Generator) runScenario(ctx context.Context) error {
 }
 
 func (g *Generator) runProfile(ctx context.Context, cfg Config) error {
+	profileStart := time.Now()
 	minRPS := max(1, cfg.TargetRPS/4)
 
 	stages := []stage{
@@ -186,7 +190,7 @@ func (g *Generator) runProfile(ctx context.Context, cfg Config) error {
 
 		log.Printf("generator stage started: name=%s duration=%v\n", stage.name, stage.duration)
 
-		if err := g.runStage(ctx, cfg, stage); err != nil {
+		if err := g.runStage(ctx, cfg, profileStart, stage); err != nil {
 			return err
 		}
 
@@ -198,7 +202,7 @@ func (g *Generator) runProfile(ctx context.Context, cfg Config) error {
 	return nil
 }
 
-func (g *Generator) runStage(ctx context.Context, cfg Config, stage stage) error {
+func (g *Generator) runStage(ctx context.Context, cfg Config, profileStart time.Time, stage stage) error {
 	stageStart := time.Now()
 
 	for {
@@ -207,7 +211,8 @@ func (g *Generator) runStage(ctx context.Context, cfg Config, stage stage) error
 			return nil
 		}
 
-		wait := nextInterval(cfg, stage.rpsAt(progress))
+		effectiveRPS := effectiveRPS(cfg, stage.rpsAt(progress), time.Since(profileStart))
+		wait := nextInterval(cfg, effectiveRPS)
 		if remaining := stage.remaining(stageStart); remaining > 0 && wait > remaining {
 			wait = remaining
 		}
@@ -272,6 +277,32 @@ func nextInterval(cfg Config, rps int) time.Duration {
 	}
 
 	return base + jitter
+}
+
+func effectiveRPS(cfg Config, baseRPS int, elapsed time.Duration) int {
+	if baseRPS <= 0 {
+		baseRPS = 1
+	}
+
+	if !spikeActive(cfg, elapsed) {
+		return baseRPS
+	}
+
+	scaled := int(float64(baseRPS) * cfg.SpikeMultiplier)
+	if scaled < baseRPS {
+		return baseRPS
+	}
+
+	return scaled
+}
+
+func spikeActive(cfg Config, elapsed time.Duration) bool {
+	if cfg.SpikeMultiplier <= 1 || cfg.SpikeDuration <= 0 || cfg.SpikeInterval <= 0 {
+		return false
+	}
+
+	position := elapsed % cfg.SpikeInterval
+	return position < cfg.SpikeDuration
 }
 
 func nextRequestClass(mix RequestMix) RequestClass {
@@ -423,12 +454,28 @@ func validateConfig(cfg Config) error {
 		return fmt.Errorf("durations must be >= 0")
 	}
 
+	if cfg.SpikeMultiplier < 0 {
+		return fmt.Errorf("spike multiplier must be >= 0")
+	}
+
+	if cfg.SpikeDuration < 0 || cfg.SpikeInterval < 0 {
+		return fmt.Errorf("spike durations must be >= 0")
+	}
+
+	if cfg.SpikeDuration > 0 && cfg.SpikeInterval == 0 {
+		return fmt.Errorf("spike interval must be > 0 when spike duration is set")
+	}
+
+	if cfg.SpikeInterval > 0 && cfg.SpikeDuration > cfg.SpikeInterval {
+		return fmt.Errorf("spike duration must be <= spike interval")
+	}
+
 	return nil
 }
 
 func logConfig(prefix string, cfg Config) {
 	log.Printf(
-		"%s: target_rps=%d timeout=%v concurrency_limit=%d jitter=%v ramp_up=%v plateau=%v ramp_down=%v invalid_share=%.2f expensive_share=%.2f no_bid_prone_share=%.2f\n",
+		"%s: target_rps=%d timeout=%v concurrency_limit=%d jitter=%v ramp_up=%v plateau=%v ramp_down=%v spike_multiplier=%.2f spike_duration=%v spike_interval=%v invalid_share=%.2f expensive_share=%.2f no_bid_prone_share=%.2f\n",
 		prefix,
 		cfg.TargetRPS,
 		cfg.Timeout,
@@ -437,6 +484,9 @@ func logConfig(prefix string, cfg Config) {
 		cfg.RampUpDuration,
 		cfg.PlateauDuration,
 		cfg.RampDownDuration,
+		cfg.SpikeMultiplier,
+		cfg.SpikeDuration,
+		cfg.SpikeInterval,
 		cfg.RequestMix.InvalidShare,
 		cfg.RequestMix.ExpensiveShare,
 		cfg.RequestMix.NoBidProneShare,

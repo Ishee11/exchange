@@ -21,9 +21,10 @@ generator → client → DSP
 2. Нагрузка проходит через stages: `ramp-up`, `plateau`, `ramp-down`
 3. Для каждого запроса выбирается request class: `hot_path`, `no_bid_prone`, `expensive`, `invalid`
 4. Генерация ограничивается `concurrency_limit`, а между запросами добавляется jitter
-5. Для каждого запроса создаётся context с timeout
-6. Client отправляет HTTP POST в DSP
-7. Результаты отправки и latency экспортируются в Prometheus-метрики
+5. Поверх base load могут включаться короткие spike-всплески до pod-level peak RPS
+6. Для каждого запроса создаётся context с timeout
+7. Client отправляет HTTP POST в DSP
+8. Результаты отправки и latency экспортируются в Prometheus-метрики
 
 ## Конфигурация
 
@@ -40,11 +41,20 @@ generator → client → DSP
 - `RAMP_UP_DURATION` — длительность ramp-up
 - `PLATEAU_DURATION` — длительность plateau, `0` означает бесконечную steady-state нагрузку
 - `RAMP_DOWN_DURATION` — длительность ramp-down
+- `SPIKE_MULTIPLIER` — множитель краткого всплеска поверх base RPS
+- `SPIKE_DURATION` — длительность всплеска
+- `SPIKE_INTERVAL` — период повторения spike-окон
 - `INVALID_SHARE` — доля частично сломанных запросов
 - `EXPENSIVE_SHARE` — доля expensive запросов
 - `NO_BID_PRONE_SHARE` — доля no-bid-prone запросов
 
 Если задан `LOAD_SCENARIO`, generator автоматически переключает профили по времени в одном запуске. Для сценарных шагов используются дефолты соответствующих профилей.
+
+Профили ориентированы на pod-level нагрузку:
+
+- `normal` — steady-state около `180 RPS`, короткие всплески примерно до `270 RPS`
+- `burst` — steady-state около `450 RPS`, короткие всплески примерно до `720 RPS`
+- `heavy` — steady-state около `700 RPS`, короткие всплески примерно до `~800 RPS`
 
 ## Запуск
 
@@ -56,10 +66,21 @@ go run ./cmd/app
 
 ```bash
 TRAFFIC_PROFILE=burst \
-TARGET_RPS=1500 \
-CONCURRENCY_LIMIT=300 \
-REQUEST_TIMEOUT=80ms \
+TARGET_RPS=500 \
+CONCURRENCY_LIMIT=180 \
+REQUEST_TIMEOUT=90ms \
 PLATEAU_DURATION=20s \
+go run ./cmd/app
+```
+
+Пример подового burst-сценария с пиками около `800 RPS`:
+
+```bash
+TRAFFIC_PROFILE=heavy \
+PLATEAU_DURATION=10m \
+SPIKE_MULTIPLIER=1.14 \
+SPIKE_DURATION=10s \
+SPIKE_INTERVAL=30s \
 go run ./cmd/app
 ```
 

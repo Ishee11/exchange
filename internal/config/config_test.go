@@ -19,16 +19,20 @@ func TestLoad_ProfileDefaults(t *testing.T) {
 		t.Fatalf("unexpected profile: got %q want %q", cfg.TrafficProfile, ProfileBurst)
 	}
 
-	if cfg.TargetRPS != 1000 {
-		t.Fatalf("unexpected rps: got %d want %d", cfg.TargetRPS, 1000)
+	if cfg.TargetRPS != 450 {
+		t.Fatalf("unexpected rps: got %d want %d", cfg.TargetRPS, 450)
 	}
 
-	if cfg.ConcurrencyLimit != 256 {
-		t.Fatalf("unexpected concurrency: got %d want %d", cfg.ConcurrencyLimit, 256)
+	if cfg.ConcurrencyLimit != 160 {
+		t.Fatalf("unexpected concurrency: got %d want %d", cfg.ConcurrencyLimit, 160)
 	}
 
-	if cfg.RequestTimeout != 90*time.Millisecond {
-		t.Fatalf("unexpected timeout: got %v want %v", cfg.RequestTimeout, 90*time.Millisecond)
+	if cfg.RequestTimeout != 100*time.Millisecond {
+		t.Fatalf("unexpected timeout: got %v want %v", cfg.RequestTimeout, 100*time.Millisecond)
+	}
+
+	if cfg.SpikeMultiplier != 1.6 || cfg.SpikeDuration != 8*time.Second || cfg.SpikeInterval != 35*time.Second {
+		t.Fatalf("unexpected spike defaults: %+v", cfg)
 	}
 
 	if cfg.DSPURL != "http://dsp.local/bid" || cfg.MetricsAddr != ":9999" {
@@ -42,6 +46,9 @@ func TestLoad_OverridesProfileDefaults(t *testing.T) {
 	t.Setenv("CONCURRENCY_LIMIT", "42")
 	t.Setenv("REQUEST_TIMEOUT", "250ms")
 	t.Setenv("REQUEST_JITTER", "8ms")
+	t.Setenv("SPIKE_MULTIPLIER", "2.0")
+	t.Setenv("SPIKE_DURATION", "12s")
+	t.Setenv("SPIKE_INTERVAL", "40s")
 	t.Setenv("INVALID_SHARE", "0.05")
 	t.Setenv("EXPENSIVE_SHARE", "0.20")
 	t.Setenv("NO_BID_PRONE_SHARE", "0.30")
@@ -57,6 +64,10 @@ func TestLoad_OverridesProfileDefaults(t *testing.T) {
 
 	if cfg.RequestTimeout != 250*time.Millisecond || cfg.Jitter != 8*time.Millisecond {
 		t.Fatalf("duration overrides not applied: %+v", cfg)
+	}
+
+	if cfg.SpikeMultiplier != 2.0 || cfg.SpikeDuration != 12*time.Second || cfg.SpikeInterval != 40*time.Second {
+		t.Fatalf("spike overrides not applied: %+v", cfg)
 	}
 
 	if cfg.InvalidShare != 0.05 || cfg.ExpensiveShare != 0.20 || cfg.NoBidProneShare != 0.30 {

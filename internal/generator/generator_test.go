@@ -240,3 +240,26 @@ func TestGenerator_RunsScenarioStepsSequentially(t *testing.T) {
 		t.Fatalf("expected second step to send more requests after profile switch: first=%d second=%d", firstStepCount, secondStepCount)
 	}
 }
+
+func TestEffectiveRPS_UsesSpikeWindow(t *testing.T) {
+	cfg := Config{
+		TargetRPS:        450,
+		Timeout:          100 * time.Millisecond,
+		ConcurrencyLimit: 32,
+		SpikeMultiplier:  1.6,
+		SpikeDuration:    8 * time.Second,
+		SpikeInterval:    35 * time.Second,
+	}
+
+	if got := effectiveRPS(cfg, 450, 2*time.Second); got != 720 {
+		t.Fatalf("unexpected spike rps: got %d want %d", got, 720)
+	}
+
+	if got := effectiveRPS(cfg, 450, 12*time.Second); got != 450 {
+		t.Fatalf("unexpected steady-state rps: got %d want %d", got, 450)
+	}
+
+	if got := effectiveRPS(cfg, 450, 36*time.Second); got != 720 {
+		t.Fatalf("unexpected recurring spike rps: got %d want %d", got, 720)
+	}
+}

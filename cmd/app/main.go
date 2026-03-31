@@ -57,6 +57,9 @@ func toGeneratorConfig(cfg config.Config) generator.Config {
 		RampUpDuration:   cfg.RampUpDuration,
 		PlateauDuration:  cfg.PlateauDuration,
 		RampDownDuration: cfg.RampDownDuration,
+		SpikeMultiplier:  cfg.SpikeMultiplier,
+		SpikeDuration:    cfg.SpikeDuration,
+		SpikeInterval:    cfg.SpikeInterval,
 		RequestMix: generator.RequestMix{
 			InvalidShare:    cfg.InvalidShare,
 			ExpensiveShare:  cfg.ExpensiveShare,

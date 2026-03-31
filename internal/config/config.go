@@ -26,6 +26,9 @@ type Config struct {
 	RampUpDuration   time.Duration
 	PlateauDuration  time.Duration
 	RampDownDuration time.Duration
+	SpikeMultiplier  float64
+	SpikeDuration    time.Duration
+	SpikeInterval    time.Duration
 	InvalidShare     float64
 	ExpensiveShare   float64
 	NoBidProneShare  float64
@@ -82,6 +85,18 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	if cfg.SpikeMultiplier, err = getEnvFloat("SPIKE_MULTIPLIER", cfg.SpikeMultiplier); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.SpikeDuration, err = getEnvDuration("SPIKE_DURATION", cfg.SpikeDuration); err != nil {
+		return Config{}, err
+	}
+
+	if cfg.SpikeInterval, err = getEnvDuration("SPIKE_INTERVAL", cfg.SpikeInterval); err != nil {
+		return Config{}, err
+	}
+
 	if cfg.InvalidShare, err = getEnvFloat("INVALID_SHARE", cfg.InvalidShare); err != nil {
 		return Config{}, err
 	}
@@ -118,6 +133,22 @@ func (c Config) Validate() error {
 		return fmt.Errorf("durations must be >= 0")
 	}
 
+	if c.SpikeMultiplier < 1 {
+		return fmt.Errorf("SPIKE_MULTIPLIER must be >= 1")
+	}
+
+	if c.SpikeDuration < 0 || c.SpikeInterval < 0 {
+		return fmt.Errorf("spike durations must be >= 0")
+	}
+
+	if c.SpikeDuration > 0 && c.SpikeInterval == 0 {
+		return fmt.Errorf("SPIKE_INTERVAL must be > 0 when SPIKE_DURATION is set")
+	}
+
+	if c.SpikeInterval > 0 && c.SpikeDuration > c.SpikeInterval {
+		return fmt.Errorf("SPIKE_DURATION must be <= SPIKE_INTERVAL")
+	}
+
 	totalShare := c.InvalidShare + c.ExpensiveShare + c.NoBidProneShare
 	if c.InvalidShare < 0 || c.ExpensiveShare < 0 || c.NoBidProneShare < 0 {
 		return fmt.Errorf("request class shares must be >= 0")
@@ -134,39 +165,48 @@ func ProfileDefaults(profile string) (Config, bool) {
 	switch profile {
 	case ProfileNormal:
 		return Config{
-			TargetRPS:        200,
+			TargetRPS:        180,
 			RequestTimeout:   120 * time.Millisecond,
 			ConcurrencyLimit: 64,
 			Jitter:           5 * time.Millisecond,
 			RampUpDuration:   5 * time.Second,
 			PlateauDuration:  0,
 			RampDownDuration: 0,
+			SpikeMultiplier:  1.5,
+			SpikeDuration:    5 * time.Second,
+			SpikeInterval:    45 * time.Second,
 			InvalidShare:     0.01,
 			ExpensiveShare:   0.15,
 			NoBidProneShare:  0.25,
 		}, true
 	case ProfileBurst:
 		return Config{
-			TargetRPS:        1000,
-			RequestTimeout:   90 * time.Millisecond,
-			ConcurrencyLimit: 256,
-			Jitter:           2 * time.Millisecond,
+			TargetRPS:        450,
+			RequestTimeout:   100 * time.Millisecond,
+			ConcurrencyLimit: 160,
+			Jitter:           3 * time.Millisecond,
 			RampUpDuration:   2 * time.Second,
 			PlateauDuration:  15 * time.Second,
 			RampDownDuration: 3 * time.Second,
+			SpikeMultiplier:  1.6,
+			SpikeDuration:    8 * time.Second,
+			SpikeInterval:    35 * time.Second,
 			InvalidShare:     0.02,
 			ExpensiveShare:   0.25,
 			NoBidProneShare:  0.3,
 		}, true
 	case ProfileHeavy:
 		return Config{
-			TargetRPS:        3000,
-			RequestTimeout:   70 * time.Millisecond,
-			ConcurrencyLimit: 1024,
+			TargetRPS:        700,
+			RequestTimeout:   80 * time.Millisecond,
+			ConcurrencyLimit: 256,
 			Jitter:           1 * time.Millisecond,
 			RampUpDuration:   5 * time.Second,
 			PlateauDuration:  30 * time.Second,
 			RampDownDuration: 5 * time.Second,
+			SpikeMultiplier:  1.14,
+			SpikeDuration:    10 * time.Second,
+			SpikeInterval:    30 * time.Second,
 			InvalidShare:     0.03,
 			ExpensiveShare:   0.35,
 			NoBidProneShare:  0.35,
