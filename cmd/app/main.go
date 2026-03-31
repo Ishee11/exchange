@@ -5,48 +5,28 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/Ishee11/exchange/internal/client"
+	"github.com/Ishee11/exchange/internal/config"
 	"github.com/Ishee11/exchange/internal/generator"
 	"github.com/Ishee11/exchange/internal/metrics"
 )
 
-type BidRequest struct {
-	RequestID   string `json:"request_id"`   // идемпотентность
-	ImpID       string `json:"imp_id"`       // конкретный показ
-	SiteID      string `json:"site_id"`      // площадка
-	PlacementID string `json:"placement_id"` // слот
-
-	FloorPrice float64 `json:"floor_price"`
-
-	UserID     string `json:"user_id"`
-	DeviceType string `json:"device_type"`
-
-	Timestamp int64 `json:"ts"`
-}
-
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	url := os.Getenv("DSP_URL")
-	if url == "" {
-		url = "http://localhost:8080/bid"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config error: %v", err)
 	}
 
-	metricsAddr := os.Getenv("METRICS_ADDR")
-	if metricsAddr == "" {
-		metricsAddr = ":2112"
-	}
+	go serveMetrics(cfg.MetricsAddr)
 
-	go serveMetrics(metricsAddr)
-
-	c := client.New(url)
+	c := client.New(cfg.DSPURL)
 
 	gen := generator.New(
-		10,
-		100*time.Millisecond, // ← SLA
+		toGeneratorConfig(cfg),
 		c,
 	)
 
@@ -61,5 +41,22 @@ func serveMetrics(addr string) {
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatalf("metrics server failed: %v", err)
+	}
+}
+
+func toGeneratorConfig(cfg config.Config) generator.Config {
+	return generator.Config{
+		TargetRPS:        cfg.TargetRPS,
+		Timeout:          cfg.RequestTimeout,
+		ConcurrencyLimit: cfg.ConcurrencyLimit,
+		Jitter:           cfg.Jitter,
+		RampUpDuration:   cfg.RampUpDuration,
+		PlateauDuration:  cfg.PlateauDuration,
+		RampDownDuration: cfg.RampDownDuration,
+		RequestMix: generator.RequestMix{
+			InvalidShare:    cfg.InvalidShare,
+			ExpensiveShare:  cfg.ExpensiveShare,
+			NoBidProneShare: cfg.NoBidProneShare,
+		},
 	}
 }
